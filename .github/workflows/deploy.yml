@@ -1,0 +1,154 @@
+# Deploy YC Function + Triggers via Terraform
+#
+# Required secret (Settings > Secrets and variables > Actions):
+#   YC_TOKEN  — Yandex Cloud IAM token. Obtain with:
+#               yc iam create-token
+#               Tokens expire after 12 hours; regenerate before a long session.
+#
+# image_container_map input format (JSON string):
+#   {"urlshortener":"bba...","otherapp":"bbb..."}
+#
+# WARNING: Terraform state is local to the runner and is lost after each run.
+# Configure the S3 backend in terraform/main.tf before using this workflow
+# in production to avoid "resource already exists" errors on repeated runs.
+
+name: Deploy YC Function
+
+on:
+  workflow_dispatch:
+    inputs:
+      folder_id:
+        description: "Yandex Cloud folder ID (yc resource-manager folder list)"
+        required: true
+        type: string
+      registry_id:
+        description: "Container Registry ID (yc container registry list)"
+        required: true
+        type: string
+      image_container_map:
+        description: 'JSON map of repo → container ID, e.g. {"myapp":"bba..."}'
+        required: true
+        type: string
+      function_name:
+        description: "Cloud Function name"
+        required: false
+        default: "registry-deploy"
+        type: string
+      function_memory:
+        description: "Function memory in MB"
+        required: false
+        default: "128"
+        type: string
+      function_timeout:
+        description: "Function execution timeout in seconds"
+        required: false
+        default: "30"
+        type: string
+      zone:
+        description: "Availability zone"
+        required: false
+        default: "ru-central1-a"
+        type: string
+      apply:
+        description: "Run terraform apply (false = plan only)"
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  deploy:
+    name: Terraform ${{ inputs.apply && 'Apply' || 'Plan' }}
+    runs-on: ubuntu-latest
+
+    env:
+      YC_TOKEN: ${{ secrets.YC_TOKEN }}
+      TF_VAR_folder_id: ${{ inputs.folder_id }}
+      TF_VAR_registry_id: ${{ inputs.registry_id }}
+      TF_VAR_function_name: ${{ inputs.function_name }}
+      TF_VAR_function_memory: ${{ inputs.function_memory }}
+      TF_VAR_function_timeout: ${{ inputs.function_timeout }}
+      TF_VAR_zone: ${{ inputs.zone }}
+      # Passed via env to avoid shell injection from ${{ }} inline interpolation
+      IMAGE_CONTAINER_MAP: ${{ inputs.image_container_map }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate inputs
+        run: |
+          fail=0
+
+          if [ -z "$TF_VAR_folder_id" ]; then
+            echo "::error::folder_id is required"
+            fail=1
+          fi
+
+          if [ -z "$TF_VAR_registry_id" ]; then
+            echo "::error::registry_id is required"
+            fail=1
+          fi
+
+          if [ -z "$IMAGE_CONTAINER_MAP" ]; then
+            echo "::error::image_container_map is required"
+            fail=1
+          elif ! echo "$IMAGE_CONTAINER_MAP" | jq . > /dev/null 2>&1; then
+            echo "::error::image_container_map is not valid JSON"
+            fail=1
+          fi
+
+          if ! echo "$TF_VAR_function_memory" | grep -qE '^[0-9]+$'; then
+            echo "::error::function_memory must be a number, got: $TF_VAR_function_memory"
+            fail=1
+          fi
+
+          if ! echo "$TF_VAR_function_timeout" | grep -qE '^[0-9]+$'; then
+            echo "::error::function_timeout must be a number, got: $TF_VAR_function_timeout"
+            fail=1
+          fi
+
+          if [ -z "$YC_TOKEN" ]; then
+            echo "::error::YC_TOKEN secret is not set. Add it under Settings > Secrets and variables > Actions."
+            fail=1
+          fi
+
+          exit $fail
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.23"
+          cache-dependency-path: function/go.sum
+
+      - name: Validate Go source
+        working-directory: function
+        run: |
+          go mod download
+          go vet ./...
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+
+      - name: Terraform Init
+        working-directory: terraform
+        run: terraform init -input=false
+
+      - name: Terraform Plan
+        working-directory: terraform
+        run: |
+          terraform plan \
+            -var "image_container_map=$IMAGE_CONTAINER_MAP" \
+            -out=tfplan \
+            -input=false
+
+      - name: Terraform Apply
+        if: inputs.apply == true
+        working-directory: terraform
+        run: terraform apply -auto-approve tfplan
+
+      - name: Terraform Output
+        if: inputs.apply == true
+        working-directory: terraform
+        run: terraform output

@@ -1,0 +1,15 @@
+folder_id   = "b1g..."   # yc resource-manager folder list
+registry_id = "crp..."   # yc container registry list
+
+# Add one entry per project that should be auto-deployed.
+# Key   = image repository name (must match what is pushed to the registry)
+# Value = Serverless Container ID  (yc serverless container list)
+image_container_map = {
+  "urlshortener" = "bba..."
+  # "otherapp"   = "bbb..."
+}
+
+# Optional overrides
+function_name    = "registry-deploy"
+function_memory  = 128
+function_timeout = 30
