@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -24,14 +25,34 @@ const (
 
 // TriggerEvent is the payload sent by a Container Registry trigger.
 type TriggerEvent struct {
-	Messages []struct {
-		Details struct {
-			RegistryID     string `json:"registry_id"`
-			RepositoryName string `json:"repository_name"`
-			Tag            string `json:"tag"`
-		} `json:"details"`
-	} `json:"messages"`
+	Messages []CRMessage `json:"messages"`
 }
+
+type CRMessage struct {
+	EventMetadata CREventMetadata `json:"event_metadata"`
+	Details       CRDetails       `json:"details"`
+}
+
+type CREventMetadata struct {
+	EventID   string `json:"event_id"`
+	EventType string `json:"event_type"`
+	CreatedAt string `json:"created_at"`
+	CloudID   string `json:"cloud_id"`
+	FolderID  string `json:"folder_id"`
+}
+
+type CRDetails struct {
+	RegistryID     string `json:"registry_id"`
+	RepositoryName string `json:"repository_name"`
+	Tag            string `json:"tag"`
+	ImageID        string `json:"image_id"`
+	ImageDigest    string `json:"image_digest"`
+}
+
+const (
+	eventTypeCreateImage    = "yandex.cloud.events.containerregistry.CreateImage"
+	eventTypeCreateImageTag = "yandex.cloud.events.containerregistry.CreateImageTag"
+)
 
 type iamTokenResponse struct {
 	AccessToken string `json:"access_token"`
@@ -80,68 +101,55 @@ type deployRevisionRequest struct {
 // It receives a Container Registry push event, resolves the target
 // Serverless Container from IMAGE_CONTAINER_MAP, and deploys a new
 // revision with the updated image.
-func Handler(w http.ResponseWriter, r *http.Request) {
-	body, err := io.ReadAll(r.Body)
-	if err != nil {
-		logger.Error("failed to read body", zap.Error(err))
-		http.Error(w, "failed to read body", http.StatusBadRequest)
-		return
+func Handler(_ context.Context, event TriggerEvent) (string, error) {
+	if len(event.Messages) == 0 {
+		return "", fmt.Errorf("empty messages")
 	}
 
-	var event TriggerEvent
-	if err := json.Unmarshal(body, &event); err != nil || len(event.Messages) == 0 {
-		logger.Error("invalid event payload", zap.Error(err), zap.Int("messages_count", len(event.Messages)))
-		http.Error(w, "invalid event payload", http.StatusBadRequest)
-		return
+	msg := event.Messages[0]
+	et := msg.EventMetadata.EventType
+	if et != eventTypeCreateImage && et != eventTypeCreateImageTag {
+		logger.Info("ignored event type", zap.String("event_type", et))
+		return fmt.Sprintf(`{"status":"ignored","event_type":%q}`, et), nil
 	}
 
-	d := event.Messages[0].Details
+	d := msg.Details
 	if d.RegistryID == "" || d.RepositoryName == "" || d.Tag == "" {
-		http.Error(w, "missing registry event details", http.StatusBadRequest)
-		return
+		return "", fmt.Errorf("missing registry event details")
 	}
 
 	imageURL := fmt.Sprintf("cr.yandex/%s/%s:%s", d.RegistryID, d.RepositoryName, d.Tag)
-	logger.Info("push event received", zap.String("image", imageURL))
+	logger.Info("push event received", zap.String("image", imageURL), zap.String("event_type", et))
 
 	containerMap, err := parseContainerMap(os.Getenv("IMAGE_CONTAINER_MAP"))
 	if err != nil {
-		logger.Error("container map error", zap.Error(err))
-		http.Error(w, fmt.Sprintf("container map error: %v", err), http.StatusInternalServerError)
-		return
+		return "", fmt.Errorf("container map error: %w", err)
 	}
 
 	containerID, ok := containerMap[d.RepositoryName]
 	if !ok {
 		logger.Info("no container mapped, skipping", zap.String("repository", d.RepositoryName))
-		fmt.Fprintf(w, `{"status":"skipped","image":%q}`, imageURL)
-		return
+		return fmt.Sprintf(`{"status":"skipped","image":%q}`, imageURL), nil
 	}
 
 	token, err := getIAMToken()
 	if err != nil {
-		logger.Error("get IAM token", zap.Error(err))
-		http.Error(w, fmt.Sprintf("get IAM token: %v", err), http.StatusInternalServerError)
-		return
+		return "", fmt.Errorf("get IAM token: %w", err)
 	}
 
 	rev, err := getCurrentRevision(token, containerID)
 	if err != nil {
-		logger.Error("get revision", zap.Error(err), zap.String("container_id", containerID))
-		http.Error(w, fmt.Sprintf("get revision: %v", err), http.StatusInternalServerError)
-		return
+		return "", fmt.Errorf("get revision: %w", err)
 	}
 
 	rev.Image.ImageURL = imageURL
 
 	if err := deployRevision(token, containerID, rev); err != nil {
-		logger.Error("deploy revision", zap.Error(err), zap.String("container_id", containerID), zap.String("image", imageURL))
-		http.Error(w, fmt.Sprintf("deploy revision: %v", err), http.StatusInternalServerError)
-		return
+		return "", fmt.Errorf("deploy revision: %w", err)
 	}
 
 	logger.Info("deployed", zap.String("image", imageURL), zap.String("container_id", containerID))
-	fmt.Fprintf(w, `{"status":"ok","image":%q,"container":%q}`, imageURL, containerID)
+	return fmt.Sprintf(`{"status":"ok","image":%q,"container":%q}`, imageURL, containerID), nil
 }
 
 func parseContainerMap(raw string) (map[string]string, error) {
@@ -228,9 +236,14 @@ func deployRevision(token, containerID string, rev *revision) error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return fmt.Errorf("read resp body: %v", err)
+		}
+
 		return fmt.Errorf("status %d: %s", resp.StatusCode, body)
 	}
+
 	return nil
 }
 
