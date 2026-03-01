@@ -4,12 +4,12 @@
 #   YC_SA_JSON_KEY — Contents of the service account authorized key JSON.
 #
 #   One-time setup:
-#     # Create an authorized key for the SA that Terraform will use
-#     yc iam key create \
-#       --service-account-name registry-deploy-sa \
-#       --output key.json
-#     # Copy the full contents of key.json into the GitHub secret YC_SA_JSON_KEY
-#     # Delete key.json from your machine afterwards
+#     yc iam key create --service-account-name registry-deploy-sa --output key.json
+#     # Paste the full contents of key.json into the GitHub secret YC_SA_JSON_KEY
+#     rm key.json
+#
+#   For local terraform runs:
+#     export YC_SERVICE_ACCOUNT_KEY_FILE=$(cat key.json)
 #
 #   The key does not expire. Rotate it manually if needed:
 #     yc iam key delete --id <key-id>
@@ -83,10 +83,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Write SA key file
-        run: |
-          echo '${{ secrets.YC_SA_JSON_KEY }}' > /tmp/yc-sa-key.json
-          echo "YC_SERVICE_ACCOUNT_KEY_FILE=/tmp/yc-sa-key.json" >> "$GITHUB_ENV"
+      - name: Set SA key
+        run: echo "YC_SERVICE_ACCOUNT_KEY_FILE=$YC_SA_JSON_KEY" >> "$GITHUB_ENV"
+        env:
+          YC_SA_JSON_KEY: ${{ secrets.YC_SA_JSON_KEY }}
 
       - name: Validate inputs
         run: |
@@ -120,7 +120,7 @@ jobs:
             fail=1
           fi
 
-          if [ ! -s /tmp/yc-sa-key.json ]; then
+          if [ -z "$YC_SERVICE_ACCOUNT_KEY_FILE" ]; then
             echo "::error::YC_SA_JSON_KEY secret is not set. Add it under Settings > Secrets and variables > Actions."
             fail=1
           fi
@@ -166,6 +166,3 @@ jobs:
         working-directory: terraform
         run: terraform output
 
-      - name: Remove SA key file
-        if: always()
-        run: rm -f /tmp/yc-sa-key.json

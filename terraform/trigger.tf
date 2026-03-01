@@ -12,9 +12,11 @@ resource "yandex_function_trigger" "registry_push" {
   container_registry {
     registry_id = var.registry_id
     image_name  = each.key
+    batch_cutoff = "1"
+    batch_size   = "1"
 
     # Fire when a new tag is pushed (e.g. pr-42, latest, sha-abc123).
-    create_image_tag {}
+    create_image_tag = true
   }
 
   function {
