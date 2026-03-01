@@ -1,9 +1,18 @@
 # Deploy YC Function + Triggers via Terraform
 #
 # Required secret (Settings > Secrets and variables > Actions):
-#   YC_TOKEN  — Yandex Cloud IAM token. Obtain with:
-#               yc iam create-token
-#               Tokens expire after 12 hours; regenerate before a long session.
+#   YC_SA_JSON_KEY — Contents of the service account authorized key JSON.
+#
+#   One-time setup:
+#     # Create an authorized key for the SA that Terraform will use
+#     yc iam key create \
+#       --service-account-name registry-deploy-sa \
+#       --output key.json
+#     # Copy the full contents of key.json into the GitHub secret YC_SA_JSON_KEY
+#     # Delete key.json from your machine afterwards
+#
+#   The key does not expire. Rotate it manually if needed:
+#     yc iam key delete --id <key-id>
 #
 # image_container_map input format (JSON string):
 #   {"urlshortener":"bba...","otherapp":"bbb..."}
@@ -61,7 +70,6 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
-      YC_TOKEN: ${{ secrets.YC_TOKEN }}
       TF_VAR_folder_id: ${{ inputs.folder_id }}
       TF_VAR_registry_id: ${{ inputs.registry_id }}
       TF_VAR_function_name: ${{ inputs.function_name }}
@@ -74,6 +82,11 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Write SA key file
+        run: |
+          echo '${{ secrets.YC_SA_JSON_KEY }}' > /tmp/yc-sa-key.json
+          echo "YC_SERVICE_ACCOUNT_KEY_FILE=/tmp/yc-sa-key.json" >> "$GITHUB_ENV"
 
       - name: Validate inputs
         run: |
@@ -107,8 +120,8 @@ jobs:
             fail=1
           fi
 
-          if [ -z "$YC_TOKEN" ]; then
-            echo "::error::YC_TOKEN secret is not set. Add it under Settings > Secrets and variables > Actions."
+          if [ ! -s /tmp/yc-sa-key.json ]; then
+            echo "::error::YC_SA_JSON_KEY secret is not set. Add it under Settings > Secrets and variables > Actions."
             fail=1
           fi
 
@@ -152,3 +165,7 @@ jobs:
         if: inputs.apply == true
         working-directory: terraform
         run: terraform output
+
+      - name: Remove SA key file
+        if: always()
+        run: rm -f /tmp/yc-sa-key.json
