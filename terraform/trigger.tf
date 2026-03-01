@@ -10,8 +10,8 @@ resource "yandex_function_trigger" "registry_push" {
   folder_id   = var.folder_id
 
   container_registry {
-    registry_id = var.registry_id
-    image_name  = each.key
+    registry_id  = var.registry_id
+    image_name   = "${var.registry_id}/${each.key}"
     batch_cutoff = "1"
     batch_size   = "1"
 

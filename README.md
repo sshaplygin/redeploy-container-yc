@@ -81,12 +81,15 @@ image_container_map = {
 ### 2. Apply
 
 ```bash
+export YC_SERVICE_ACCOUNT_KEY_FILE=$(cat key.json)
+
 terraform init
 terraform plan
 terraform apply
 ```
 
 Terraform will create:
+
 - One Cloud Function (`registry-deploy`) with the Go handler zipped and uploaded
 - One trigger per entry in `image_container_map`, each scoped to its repository name
 - Two service accounts with minimal IAM roles:
@@ -105,10 +108,25 @@ Add an entry to `image_container_map` in `terraform.tfvars` and re-run `terrafor
 
 ## IAM roles required
 
+### Terraform deployer service account
+
+The service account used to run `terraform apply` (e.g. `registry-deploy-sa`) needs:
+
+| Role | Purpose |
+|---|---|
+| `container-registry.images.puller` | Pull images from Container Registry |
+| `functions.editor` | Create and manage Cloud Functions |
+| `iam.serviceAccounts.admin` | Create and bind runtime service accounts |
+| `resource-manager.admin` | Manage folder-level resources |
+| `serverless-containers.editor` | Create and manage Serverless Containers |
+| `serverless.functions.invoker` | Invoke Cloud Functions |
+
+### Runtime service accounts (created by Terraform)
+
 | Role | Assigned to | Purpose |
 |---|---|---|
-| `serverless-containers.editor` | function service account | Deploy new container revisions |
-| `serverless.functions.invoker` | trigger service account | Invoke the Cloud Function |
+| `serverless-containers.editor` | `<function_name>-sa` | Deploy new container revisions at runtime |
+| `serverless.functions.invoker` | `<function_name>-trigger-sa` | Invoke the Cloud Function from the registry trigger |
 
 ## Local development
 
