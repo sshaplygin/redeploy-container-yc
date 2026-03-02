@@ -23,8 +23,11 @@ variable "registry_id" {
 variable "image_container_map" {
   type        = map(string)
   description = <<-EOT
-    Map of image repository name → Serverless Container ID.
-    One trigger per entry is created, scoped to that image name.
+    Map of short image name → Serverless Container ID.
+    Keys are just the image name (without registry_id prefix).
+    One trigger per entry is created; the registry_id is prepended automatically
+    when building the IMAGE_CONTAINER_MAP env var so it matches the
+    repository_name field in Container Registry trigger events.
 
     Example:
       {

@@ -21,6 +21,10 @@ resource "yandex_function" "deploy" {
     # JSON map: { "image-repo-name": "container-id", ... }
     # Built from var.image_container_map so adding a new project only
     # requires updating terraform.tfvars and re-applying.
-    IMAGE_CONTAINER_MAP = jsonencode(var.image_container_map)
+    # Keys are prefixed with registry_id to match the repository_name field
+    # returned by the Container Registry trigger event (e.g. "crp.../urlshortener").
+    IMAGE_CONTAINER_MAP = jsonencode({
+      for k, v in var.image_container_map : "${var.registry_id}/${k}" => v
+    })
   }
 }

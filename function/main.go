@@ -58,10 +58,8 @@ type iamTokenResponse struct {
 	AccessToken string `json:"access_token"`
 }
 
-type container struct {
-	Status struct {
-		ActiveRevisionID string `json:"activeRevisionId"`
-	} `json:"status"`
+type revisionsResponse struct {
+	Revisions []revision `json:"revisions"`
 }
 
 // revision mirrors the fields returned by GET /revisions/{id} that we
@@ -69,7 +67,7 @@ type container struct {
 type revision struct {
 	Resources        json.RawMessage `json:"resources"`
 	ExecutionTimeout string          `json:"executionTimeout,omitempty"`
-	Concurrency      int64           `json:"concurrency,omitempty"`
+	Concurrency      string          `json:"concurrency,omitempty"`
 	ServiceAccountID string          `json:"serviceAccountId,omitempty"`
 	Image            revisionImage   `json:"image"`
 	Secrets          json.RawMessage `json:"secrets,omitempty"`
@@ -89,9 +87,9 @@ type deployRevisionRequest struct {
 	ContainerID      string          `json:"containerId"`
 	Resources        json.RawMessage `json:"resources"`
 	ExecutionTimeout string          `json:"executionTimeout,omitempty"`
-	Concurrency      int64           `json:"concurrency,omitempty"`
+	Concurrency      string          `json:"concurrency,omitempty"`
 	ServiceAccountID string          `json:"serviceAccountId,omitempty"`
-	Image            revisionImage   `json:"image"`
+	ImageSpec        revisionImage   `json:"imageSpec"`
 	Secrets          json.RawMessage `json:"secrets,omitempty"`
 	Connectivity     json.RawMessage `json:"connectivity,omitempty"`
 	LogOptions       json.RawMessage `json:"logOptions,omitempty"`
@@ -106,6 +104,8 @@ func Handler(_ context.Context, event TriggerEvent) (string, error) {
 		return "", fmt.Errorf("empty messages")
 	}
 
+	logger.Info("input messages", zap.Any("messages", event))
+
 	msg := event.Messages[0]
 	et := msg.EventMetadata.EventType
 	if et != eventTypeCreateImage && et != eventTypeCreateImageTag {
@@ -114,11 +114,18 @@ func Handler(_ context.Context, event TriggerEvent) (string, error) {
 	}
 
 	d := msg.Details
-	if d.RegistryID == "" || d.RepositoryName == "" || d.Tag == "" {
+	if d.RepositoryName == "" {
 		return "", fmt.Errorf("missing registry event details")
 	}
 
-	imageURL := fmt.Sprintf("cr.yandex/%s/%s:%s", d.RegistryID, d.RepositoryName, d.Tag)
+	var imageURL string
+	if d.Tag != "" {
+		imageURL = fmt.Sprintf("cr.yandex/%s:%s", d.RepositoryName, d.Tag)
+	} else if d.ImageDigest != "" {
+		imageURL = fmt.Sprintf("cr.yandex/%s@%s", d.RepositoryName, d.ImageDigest)
+	} else {
+		return "", fmt.Errorf("missing registry event details: no tag or digest")
+	}
 	logger.Info("push event received", zap.String("image", imageURL), zap.String("event_type", et))
 
 	containerMap, err := parseContainerMap(os.Getenv("IMAGE_CONTAINER_MAP"))
@@ -184,23 +191,15 @@ func getIAMToken() (string, error) {
 }
 
 func getCurrentRevision(token, containerID string) (*revision, error) {
-	// 1. Fetch container to get the active revision ID.
-	var c container
-	if err := apiGet(token, fmt.Sprintf("%s/containers/%s", containersAPIURL, containerID), &c); err != nil {
-		return nil, fmt.Errorf("get container: %w", err)
+	var resp revisionsResponse
+	url := fmt.Sprintf("%s/revisions?containerId=%s&pageSize=1", containersAPIURL, containerID)
+	if err := apiGet(token, url, &resp); err != nil {
+		return nil, fmt.Errorf("list revisions: %w", err)
 	}
-
-	revisionID := c.Status.ActiveRevisionID
-	if revisionID == "" {
-		return nil, fmt.Errorf("container %s has no active revision", containerID)
+	if len(resp.Revisions) == 0 {
+		return nil, fmt.Errorf("container %s has no revisions", containerID)
 	}
-
-	// 2. Fetch full revision config.
-	var rev revision
-	if err := apiGet(token, fmt.Sprintf("%s/revisions/%s", containersAPIURL, revisionID), &rev); err != nil {
-		return nil, fmt.Errorf("get revision: %w", err)
-	}
-	return &rev, nil
+	return &resp.Revisions[0], nil
 }
 
 func deployRevision(token, containerID string, rev *revision) error {
@@ -210,7 +209,7 @@ func deployRevision(token, containerID string, rev *revision) error {
 		ExecutionTimeout: rev.ExecutionTimeout,
 		Concurrency:      rev.Concurrency,
 		ServiceAccountID: rev.ServiceAccountID,
-		Image:            rev.Image,
+		ImageSpec:        rev.Image,
 		Secrets:          rev.Secrets,
 		Connectivity:     rev.Connectivity,
 		LogOptions:       rev.LogOptions,
@@ -221,7 +220,7 @@ func deployRevision(token, containerID string, rev *revision) error {
 		return fmt.Errorf("marshal request: %w", err)
 	}
 
-	url := fmt.Sprintf("%s/revisions:deployRevision", containersAPIURL)
+	url := fmt.Sprintf("%s/revisions:deploy", containersAPIURL)
 	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(data))
 	if err != nil {
 		return err
@@ -268,5 +267,17 @@ func apiGet(token, url string, dst any) error {
 
 		return fmt.Errorf("status %d: %s", resp.StatusCode, body)
 	}
-	return json.NewDecoder(resp.Body).Decode(dst)
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("read respone body %v", err)
+	}
+
+	if err = json.Unmarshal(body, dst); err != nil {
+		logger.Error("decode resp body", zap.String("body", string(body)))
+
+		return err
+	}
+
+	return nil
 }

@@ -64,7 +64,7 @@ Edit `terraform.tfvars`:
 |---|---|
 | `folder_id` | Yandex Cloud folder ID (`yc resource-manager folder list`) |
 | `registry_id` | Container Registry ID (`yc container registry list`) |
-| `image_container_map` | Map of `repo-name → container-id` |
+| `image_container_map` | Map of short image name → container-id (**no** `registry_id/` prefix) |
 | `function_name` | Cloud Function name (default: `registry-deploy`) |
 | `function_memory` | Memory in MB (default: `128`) |
 | `function_timeout` | Timeout in seconds (default: `30`) |
@@ -77,6 +77,10 @@ image_container_map = {
   "otherapp"     = "bbb..."
 }
 ```
+
+> Keys are the bare image names (e.g. `urlshortener`). Terraform prefixes them
+> with `registry_id/` when building the `IMAGE_CONTAINER_MAP` env var so they
+> match the `repository_name` field in trigger events (`crp.../urlshortener`).
 
 ### 2. Apply
 
@@ -93,7 +97,7 @@ Terraform will create:
 - One Cloud Function (`registry-deploy`) with the Go handler zipped and uploaded
 - One trigger per entry in `image_container_map`, each scoped to its repository name
 - Two service accounts with minimal IAM roles:
-  - **function-sa** — `serverless-containers.editor` (deploys new revisions)
+  - **function-sa** — `serverless-containers.editor`, `iam.serviceAccounts.user`, `vpc.user`
   - **trigger-sa** — `serverless.functions.invoker` (invokes the function)
 
 ### 3. Adding a new container
@@ -102,9 +106,9 @@ Add an entry to `image_container_map` in `terraform.tfvars` and re-run `terrafor
 
 ## Function environment variable
 
-| Variable | Format | Description |
-|---|---|---|
-| `IMAGE_CONTAINER_MAP` | JSON `{"repo": "container-id"}` | Set automatically by Terraform from `image_container_map` |
+| Variable              | Format                                        | Description                                              |
+|-----------------------|-----------------------------------------------|----------------------------------------------------------|
+| `IMAGE_CONTAINER_MAP` | JSON `{"registry_id/repo": "container-id"}`   | Auto-set by Terraform from `image_container_map` variable|
 
 ## IAM roles required
 
@@ -126,6 +130,8 @@ The service account used to run `terraform apply` (e.g. `registry-deploy-sa`) ne
 | Role | Assigned to | Purpose |
 |---|---|---|
 | `serverless-containers.editor` | `<function_name>-sa` | Deploy new container revisions at runtime |
+| `iam.serviceAccounts.user` | `<function_name>-sa` | Assign the container's service account when deploying a revision |
+| `vpc.user` | `<function_name>-sa` | Attach a VPC network when the revision config carries connectivity settings |
 | `serverless.functions.invoker` | `<function_name>-trigger-sa` | Invoke the Cloud Function from the registry trigger |
 
 ## Local development
