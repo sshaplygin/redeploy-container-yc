@@ -64,7 +64,14 @@ type revisionsResponse struct {
 
 // revision mirrors the fields returned by GET /revisions/{id} that we
 // need to pass back verbatim when deploying a new revision.
+//
+// Every field DeployRevision accepts has to be listed here, because a field
+// that is not carried over is not "left alone" — the deployed revision simply
+// does not have it. Dropping provisionPolicy, for instance, takes a container
+// from min_instances=1 to scale-to-zero on the next image push, and the only
+// symptom is cold starts.
 type revision struct {
+	Description      string          `json:"description,omitempty"`
 	Resources        json.RawMessage `json:"resources"`
 	ExecutionTimeout string          `json:"executionTimeout,omitempty"`
 	Concurrency      string          `json:"concurrency,omitempty"`
@@ -72,6 +79,12 @@ type revision struct {
 	Image            revisionImage   `json:"image"`
 	Secrets          json.RawMessage `json:"secrets,omitempty"`
 	Connectivity     json.RawMessage `json:"connectivity,omitempty"`
+	ProvisionPolicy  json.RawMessage `json:"provisionPolicy,omitempty"`
+	ScalingPolicy    json.RawMessage `json:"scalingPolicy,omitempty"`
+	StorageMounts    json.RawMessage `json:"storageMounts,omitempty"`
+	Mounts           json.RawMessage `json:"mounts,omitempty"`
+	Runtime          json.RawMessage `json:"runtime,omitempty"`
+	MetadataOptions  json.RawMessage `json:"metadataOptions,omitempty"`
 	LogOptions       json.RawMessage `json:"logOptions,omitempty"`
 }
 
@@ -85,6 +98,7 @@ type revisionImage struct {
 
 type deployRevisionRequest struct {
 	ContainerID      string          `json:"containerId"`
+	Description      string          `json:"description,omitempty"`
 	Resources        json.RawMessage `json:"resources"`
 	ExecutionTimeout string          `json:"executionTimeout,omitempty"`
 	Concurrency      string          `json:"concurrency,omitempty"`
@@ -92,6 +106,12 @@ type deployRevisionRequest struct {
 	ImageSpec        revisionImage   `json:"imageSpec"`
 	Secrets          json.RawMessage `json:"secrets,omitempty"`
 	Connectivity     json.RawMessage `json:"connectivity,omitempty"`
+	ProvisionPolicy  json.RawMessage `json:"provisionPolicy,omitempty"`
+	ScalingPolicy    json.RawMessage `json:"scalingPolicy,omitempty"`
+	StorageMounts    json.RawMessage `json:"storageMounts,omitempty"`
+	Mounts           json.RawMessage `json:"mounts,omitempty"`
+	Runtime          json.RawMessage `json:"runtime,omitempty"`
+	MetadataOptions  json.RawMessage `json:"metadataOptions,omitempty"`
 	LogOptions       json.RawMessage `json:"logOptions,omitempty"`
 }
 
@@ -133,9 +153,10 @@ func Handler(_ context.Context, event TriggerEvent) (string, error) {
 		return "", fmt.Errorf("container map error: %w", err)
 	}
 
-	containerID, ok := containerMap[d.RepositoryName]
+	containerID, ok := lookupContainer(containerMap, d.RepositoryName, d.Tag)
 	if !ok {
-		logger.Info("no container mapped, skipping", zap.String("repository", d.RepositoryName))
+		logger.Info("no container mapped, skipping",
+			zap.String("repository", d.RepositoryName), zap.String("tag", d.Tag))
 		return fmt.Sprintf(`{"status":"skipped","image":%q}`, imageURL), nil
 	}
 
@@ -157,6 +178,22 @@ func Handler(_ context.Context, event TriggerEvent) (string, error) {
 
 	logger.Info("deployed", zap.String("image", imageURL), zap.String("container_id", containerID))
 	return fmt.Sprintf(`{"status":"ok","image":%q,"container":%q}`, imageURL, containerID), nil
+}
+
+// lookupContainer resolves the container to redeploy, preferring a key that
+// pins the tag ("repo:tag") over one that matches the repository alone
+// ("repo"). That is what lets one image repository feed several containers:
+// "myapp:test" and "myapp:prod" are separate deploy channels cut from the same
+// builds. A bare "repo" key still matches any tag, so maps written before tag
+// routing existed keep working unchanged.
+func lookupContainer(m map[string]string, repository, tag string) (string, bool) {
+	if tag != "" {
+		if id, ok := m[repository+":"+tag]; ok {
+			return id, true
+		}
+	}
+	id, ok := m[repository]
+	return id, ok
 }
 
 func parseContainerMap(raw string) (map[string]string, error) {
@@ -205,6 +242,7 @@ func getCurrentRevision(token, containerID string) (*revision, error) {
 func deployRevision(token, containerID string, rev *revision) error {
 	payload := deployRevisionRequest{
 		ContainerID:      containerID,
+		Description:      rev.Description,
 		Resources:        rev.Resources,
 		ExecutionTimeout: rev.ExecutionTimeout,
 		Concurrency:      rev.Concurrency,
@@ -212,6 +250,12 @@ func deployRevision(token, containerID string, rev *revision) error {
 		ImageSpec:        rev.Image,
 		Secrets:          rev.Secrets,
 		Connectivity:     rev.Connectivity,
+		ProvisionPolicy:  rev.ProvisionPolicy,
+		ScalingPolicy:    rev.ScalingPolicy,
+		StorageMounts:    rev.StorageMounts,
+		Mounts:           rev.Mounts,
+		Runtime:          rev.Runtime,
+		MetadataOptions:  rev.MetadataOptions,
 		LogOptions:       rev.LogOptions,
 	}
 

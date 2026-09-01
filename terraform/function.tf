@@ -18,13 +18,20 @@ resource "yandex_function" "deploy" {
   }
 
   environment = {
-    # JSON map: { "image-repo-name": "container-id", ... }
-    # Built from var.image_container_map so adding a new project only
-    # requires updating terraform.tfvars and re-applying.
-    # Keys are prefixed with registry_id to match the repository_name field
-    # returned by the Container Registry trigger event (e.g. "crp.../urlshortener").
+    # JSON map: { "registry-id/image[:tag]": "container-id", ... }
+    # Built from var.image_container_map so adding a channel only requires
+    # updating terraform.tfvars and re-applying.
+    #
+    # Keys carry the registry_id prefix to match the repository_name field in
+    # Container Registry trigger events (e.g. "crp.../myapp"), and carry
+    # the tag when the channel pins one, which is how two channels cut from the
+    # same image reach different containers. Terraform fails on a duplicate
+    # key, so two channels cannot silently claim the same image and tag.
     IMAGE_CONTAINER_MAP = jsonencode({
-      for k, v in var.image_container_map : "${var.registry_id}/${k}" => v
+      for k, v in local.channels :
+      (v.tag == null
+        ? "${v.registry_id}/${v.image}"
+      : "${v.registry_id}/${v.image}:${v.tag}") => v.container_id
     })
   }
 }

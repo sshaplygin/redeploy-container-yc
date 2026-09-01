@@ -1,21 +1,28 @@
-# One trigger per entry in var.image_container_map.
-# Each trigger watches the same registry but filters on its own image name,
-# so only pushes to that repository invoke the function.
+# One trigger per channel in var.image_container_map.
+# Each trigger filters on its own registry, image and (optionally) tag, so only
+# the pushes that belong to that channel invoke the function.
 
 resource "yandex_function_trigger" "registry_push" {
-  for_each = var.image_container_map
+  for_each = local.channels
 
   name        = "${var.function_name}-${each.key}"
-  description = "Fires on new tag push to image '${each.key}' and deploys container ${each.value}."
+  description = "Fires on a push of image '${each.value.image}'${each.value.tag == null ? "" : " tagged '${each.value.tag}'"} and deploys container ${each.value.container_id}."
   folder_id   = var.folder_id
 
   container_registry {
-    registry_id  = var.registry_id
-    image_name   = "${var.registry_id}/${each.key}"
+    registry_id  = each.value.registry_id
+    image_name   = "${each.value.registry_id}/${each.value.image}"
+    tag          = each.value.tag
     batch_cutoff = "1"
     batch_size   = "1"
 
-    # Fire when a new tag is pushed (e.g. pr-42, latest, sha-abc123).
+    # Fire when a tag is pushed. This covers both flows that matter: a fresh
+    # `docker push` of a newly built image, and moving an existing tag onto an
+    # image already in the registry (how a build is promoted to another
+    # channel). Verified against a live deployment of this stack, where a plain
+    # push of a newly built image produced a container revision one second
+    # later — so a fresh push does raise create-image-tag, not only
+    # create-image.
     create_image_tag = true
   }
 

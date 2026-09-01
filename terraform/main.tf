@@ -26,6 +26,16 @@ provider "yandex" {
   zone      = var.zone
 }
 
+# Each channel's effective registry, resolved once so trigger.tf and function.tf
+# cannot disagree about which registry an image lives in.
+locals {
+  channels = {
+    for k, v in var.image_container_map : k => merge(v, {
+      registry_id = coalesce(v.registry_id, var.registry_id)
+    })
+  }
+}
+
 # Zip the Go source so Terraform can upload it as function content.
 data "archive_file" "function_zip" {
   type        = "zip"

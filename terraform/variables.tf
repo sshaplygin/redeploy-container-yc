@@ -17,24 +17,51 @@ variable "function_name" {
 
 variable "registry_id" {
   type        = string
-  description = "Container Registry ID to watch for image pushes."
+  description = <<-EOT
+    Default Container Registry ID to watch. Used by every entry in
+    image_container_map that does not name a registry of its own.
+  EOT
 }
 
 variable "image_container_map" {
-  type        = map(string)
+  type = map(object({
+    image        = string
+    container_id = string
+    registry_id  = optional(string)
+    tag          = optional(string)
+  }))
   description = <<-EOT
-    Map of short image name → Serverless Container ID.
-    Keys are just the image name (without registry_id prefix).
-    One trigger per entry is created; the registry_id is prepended automatically
-    when building the IMAGE_CONTAINER_MAP env var so it matches the
-    repository_name field in Container Registry trigger events.
+    Deploy channels, keyed by an arbitrary label that names the channel.
+    One trigger is created per entry, and the label is what distinguishes
+    them, so two channels may watch the same image as long as their labels
+    differ.
+
+      image        Image repository name, without the registry_id prefix.
+      container_id Serverless Container to redeploy (yc serverless container list).
+      registry_id  Registry holding the image. Defaults to var.registry_id,
+                   which is what lets one stack serve several registries.
+      tag          Only this tag fires the trigger, and only this tag routes
+                   to this container. Omitted means any tag.
 
     Example:
       {
-        "urlshortener" = "bba..."
-        "otherapp"     = "bbb..."
+        myapp = {
+          image        = "myapp"
+          container_id = "bba..."
+        }
+        otherapp-test = {
+          image        = "otherapp"
+          registry_id  = "crp..."
+          tag          = "test"
+          container_id = "bbb..."
+        }
       }
   EOT
+
+  validation {
+    condition     = alltrue([for v in var.image_container_map : v.image != "" && v.container_id != ""])
+    error_message = "Every entry needs a non-empty image and container_id."
+  }
 }
 
 variable "function_memory" {
