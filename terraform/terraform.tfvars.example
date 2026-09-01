@@ -1,12 +1,33 @@
 folder_id   = "b1g..."   # yc resource-manager folder list
-registry_id = "crp..."   # yc container registry list
+registry_id = "crp..."   # yc container registry list — the default registry
 
-# Add one entry per project that should be auto-deployed.
-# Key   = image repository name (must match what is pushed to the registry)
-# Value = Serverless Container ID  (yc serverless container list)
+# One entry per deploy channel. The key names the channel and must be unique;
+# it is what lets two channels watch the same image.
+#
+#   image        = image repository name, no registry_id prefix
+#   container_id = yc serverless container list
+#   registry_id  = optional, defaults to the registry_id above
+#   tag          = optional, only this tag fires the trigger and routes here
 image_container_map = {
-  "urlshortener" = "bba..."
-  # "otherapp"   = "bbb..."
+  urlshortener = {
+    image        = "urlshortener"
+    container_id = "bba..."
+  }
+
+  # Same image, two tags, two containers: CI pushes `test` on merge, and the
+  # production workflow moves `prod` onto a build that has proven itself.
+  # overseas-bot-test = {
+  #   image        = "overseas-bot"
+  #   registry_id  = "crp..."
+  #   tag          = "test"
+  #   container_id = "bba..."
+  # }
+  # overseas-bot-prod = {
+  #   image        = "overseas-bot"
+  #   registry_id  = "crp..."
+  #   tag          = "prod"
+  #   container_id = "bba..."
+  # }
 }
 
 # Optional overrides

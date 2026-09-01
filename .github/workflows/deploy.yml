@@ -14,8 +14,13 @@
 #   The key does not expire. Rotate it manually if needed:
 #     yc iam key delete --id <key-id>
 #
-# image_container_map input format (JSON string):
-#   {"urlshortener":"bba...","otherapp":"bbb..."}
+# image_container_map input format (JSON string), one entry per deploy channel:
+#   {"urlshortener":{"image":"urlshortener","container_id":"bba..."},
+#    "overseas-bot-test":{"image":"overseas-bot","registry_id":"crp...",
+#                         "tag":"test","container_id":"bba..."}}
+#
+#   registry_id and tag are optional: registry_id defaults to the registry_id
+#   input, and an omitted tag means any tag fires the channel.
 #
 # WARNING: Terraform state is local to the runner and is lost after each run.
 # Configure the S3 backend in terraform/main.tf before using this workflow
@@ -35,7 +40,7 @@ on:
         required: true
         type: string
       image_container_map:
-        description: 'JSON map of repo → container ID, e.g. {"myapp":"bba..."}'
+        description: 'JSON map of channel → {image, container_id, registry_id?, tag?}, e.g. {"myapp":{"image":"myapp","container_id":"bba..."}}'
         required: true
         type: string
       function_name:
@@ -107,6 +112,9 @@ jobs:
             fail=1
           elif ! echo "$IMAGE_CONTAINER_MAP" | jq . > /dev/null 2>&1; then
             echo "::error::image_container_map is not valid JSON"
+            fail=1
+          elif ! echo "$IMAGE_CONTAINER_MAP" | jq -e 'all(.[]; type == "object" and has("image") and has("container_id"))' > /dev/null; then
+            echo "::error::every image_container_map entry must be an object with image and container_id"
             fail=1
           fi
 

@@ -64,7 +64,7 @@ Edit `terraform.tfvars`:
 |---|---|
 | `folder_id` | Yandex Cloud folder ID (`yc resource-manager folder list`) |
 | `registry_id` | Container Registry ID (`yc container registry list`) |
-| `image_container_map` | Map of short image name → container-id (**no** `registry_id/` prefix) |
+| `image_container_map` | Deploy channels: label → `{image, container_id, registry_id?, tag?}` |
 | `function_name` | Cloud Function name (default: `registry-deploy`) |
 | `function_memory` | Memory in MB (default: `128`) |
 | `function_timeout` | Timeout in seconds (default: `30`) |
@@ -73,14 +73,35 @@ Example `image_container_map`:
 
 ```hcl
 image_container_map = {
-  "urlshortener" = "bba..."
-  "otherapp"     = "bbb..."
+  urlshortener = {
+    image        = "urlshortener"
+    container_id = "bba..."
+  }
+  overseas-bot-test = {
+    image        = "overseas-bot"
+    registry_id  = "crp47uqmmls9jb191nlj"
+    tag          = "test"
+    container_id = "bba..."
+  }
+  overseas-bot-prod = {
+    image        = "overseas-bot"
+    registry_id  = "crp47uqmmls9jb191nlj"
+    tag          = "prod"
+    container_id = "bba..."
+  }
 }
 ```
 
-> Keys are the bare image names (e.g. `urlshortener`). Terraform prefixes them
-> with `registry_id/` when building the `IMAGE_CONTAINER_MAP` env var so they
-> match the `repository_name` field in trigger events (`crp.../urlshortener`).
+> The key is a label for the channel, not the image name — that is what lets
+> `overseas-bot-test` and `overseas-bot-prod` watch one image and reach two
+> containers. `registry_id` is per entry and defaults to the top-level
+> `registry_id`, so one stack can serve several registries. `tag` narrows both
+> the trigger and the routing; omit it and any tag on that image fires the
+> channel.
+>
+> Terraform builds the `IMAGE_CONTAINER_MAP` env var from these entries,
+> prefixing the registry so keys match the `repository_name` field in trigger
+> events (`crp.../urlshortener`), and appending `:tag` where a channel pins one.
 
 ### 2. Apply
 
@@ -104,11 +125,30 @@ Terraform will create:
 
 Add an entry to `image_container_map` in `terraform.tfvars` and re-run `terraform apply`. A new trigger is created automatically; no code changes needed.
 
+### 4. Promoting a build between channels
+
+Two channels on one image are a promotion path: CI pushes the `test` tag on
+merge, and production is deployed by moving `prod` onto a build that has
+already proven itself in test. Moving the tag is the whole deploy — no call to
+the Serverless Containers API, so the promoting workflow needs registry
+credentials only:
+
+```bash
+IMAGE=cr.yandex/<registry-id>/overseas-bot
+docker buildx imagetools create --tag "$IMAGE:prod" "$IMAGE:pr-42"
+```
+
+Rolling back is the same command with an older source tag.
+
 ## Function environment variable
 
 | Variable              | Format                                        | Description                                              |
 |-----------------------|-----------------------------------------------|----------------------------------------------------------|
-| `IMAGE_CONTAINER_MAP` | JSON `{"registry_id/repo": "container-id"}`   | Auto-set by Terraform from `image_container_map` variable|
+| `IMAGE_CONTAINER_MAP` | JSON `{"registry_id/repo[:tag]": "container-id"}` | Auto-set by Terraform from `image_container_map` variable|
+
+The function prefers a key that pins the tag (`repo:tag`) over one that matches
+the repository alone (`repo`), so a bare `repo` key still matches any tag and
+maps written before tag routing keep working unchanged.
 
 ## IAM roles required
 
@@ -138,11 +178,13 @@ The service account used to run `terraform apply` (e.g. `registry-deploy-sa`) ne
 
 ```bash
 cd function
-go build ./...
 go vet ./...
 ```
 
-> The package has no `main()` — Yandex Cloud Functions use `Handler` as the entrypoint (`main.Handler`).
+> The package has no `main()` — Yandex Cloud Functions use `Handler` as the
+> entrypoint (`main.Handler`). That is also why `go build ./...` fails here
+> with "function main is undeclared in the main package"; `go vet` type-checks
+> the package and is the build check to run.
 
 ## Optional: remote Terraform state
 
