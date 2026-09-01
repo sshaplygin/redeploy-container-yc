@@ -9,24 +9,26 @@ registry_id = "crp..."   # yc container registry list — the default registry
 #   registry_id  = optional, defaults to the registry_id above
 #   tag          = optional, only this tag fires the trigger and routes here
 image_container_map = {
-  urlshortener = {
-    image        = "urlshortener"
+  myapp = {
+    image        = "myapp"
     container_id = "bba..."
   }
 
   # Same image, two tags, two containers: CI pushes `test` on merge, and the
   # production workflow moves `prod` onto a build that has proven itself.
-  # overseas-bot-test = {
-  #   image        = "overseas-bot"
+  # A channel may also name its own registry, which is how one stack serves
+  # images that do not live in the default one.
+  # otherapp-test = {
+  #   image        = "otherapp"
   #   registry_id  = "crp..."
   #   tag          = "test"
-  #   container_id = "bba..."
+  #   container_id = "bbb..."
   # }
-  # overseas-bot-prod = {
-  #   image        = "overseas-bot"
+  # otherapp-prod = {
+  #   image        = "otherapp"
   #   registry_id  = "crp..."
   #   tag          = "prod"
-  #   container_id = "bba..."
+  #   container_id = "bbc..."
   # }
 }
 

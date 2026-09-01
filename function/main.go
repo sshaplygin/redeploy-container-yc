@@ -183,9 +183,9 @@ func Handler(_ context.Context, event TriggerEvent) (string, error) {
 // lookupContainer resolves the container to redeploy, preferring a key that
 // pins the tag ("repo:tag") over one that matches the repository alone
 // ("repo"). That is what lets one image repository feed several containers:
-// `overseas-bot:test` and `overseas-bot:prod` are separate deploy channels
-// cut from the same builds. A bare "repo" key still matches any tag, so maps
-// written before tag routing existed keep working unchanged.
+// "myapp:test" and "myapp:prod" are separate deploy channels cut from the same
+// builds. A bare "repo" key still matches any tag, so maps written before tag
+// routing existed keep working unchanged.
 func lookupContainer(m map[string]string, repository, tag string) (string, bool) {
 	if tag != "" {
 		if id, ok := m[repository+":"+tag]; ok {

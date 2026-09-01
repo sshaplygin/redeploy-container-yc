@@ -45,15 +45,15 @@ variable "image_container_map" {
 
     Example:
       {
-        urlshortener = {
-          image        = "urlshortener"
+        myapp = {
+          image        = "myapp"
           container_id = "bba..."
         }
-        overseas-bot-test = {
-          image        = "overseas-bot"
+        otherapp-test = {
+          image        = "otherapp"
           registry_id  = "crp..."
           tag          = "test"
-          container_id = "bba..."
+          container_id = "bbb..."
         }
       }
   EOT

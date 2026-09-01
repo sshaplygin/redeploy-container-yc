@@ -15,9 +15,9 @@
 #     yc iam key delete --id <key-id>
 #
 # image_container_map input format (JSON string), one entry per deploy channel:
-#   {"urlshortener":{"image":"urlshortener","container_id":"bba..."},
-#    "overseas-bot-test":{"image":"overseas-bot","registry_id":"crp...",
-#                         "tag":"test","container_id":"bba..."}}
+#   {"myapp":{"image":"myapp","container_id":"bba..."},
+#    "otherapp-test":{"image":"otherapp","registry_id":"crp...",
+#                     "tag":"test","container_id":"bbb..."}}
 #
 #   registry_id and tag are optional: registry_id defaults to the registry_id
 #   input, and an omitted tag means any tag fires the channel.

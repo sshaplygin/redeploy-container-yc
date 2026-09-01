@@ -73,35 +73,37 @@ Example `image_container_map`:
 
 ```hcl
 image_container_map = {
-  urlshortener = {
-    image        = "urlshortener"
+  # Simplest case: default registry, any tag, one container.
+  myapp = {
+    image        = "myapp"
     container_id = "bba..."
   }
-  overseas-bot-test = {
-    image        = "overseas-bot"
-    registry_id  = "crp47uqmmls9jb191nlj"
+
+  # Another registry, and one image feeding two containers by tag.
+  otherapp-test = {
+    image        = "otherapp"
+    registry_id  = "crp..."
     tag          = "test"
-    container_id = "bba..."
+    container_id = "bbb..."
   }
-  overseas-bot-prod = {
-    image        = "overseas-bot"
-    registry_id  = "crp47uqmmls9jb191nlj"
+  otherapp-prod = {
+    image        = "otherapp"
+    registry_id  = "crp..."
     tag          = "prod"
-    container_id = "bba..."
+    container_id = "bbc..."
   }
 }
 ```
 
 > The key is a label for the channel, not the image name — that is what lets
-> `overseas-bot-test` and `overseas-bot-prod` watch one image and reach two
-> containers. `registry_id` is per entry and defaults to the top-level
-> `registry_id`, so one stack can serve several registries. `tag` narrows both
-> the trigger and the routing; omit it and any tag on that image fires the
-> channel.
+> `otherapp-test` and `otherapp-prod` watch one image and reach two containers.
+> `registry_id` is per entry and defaults to the top-level `registry_id`, so one
+> stack can serve several registries. `tag` narrows both the trigger and the
+> routing; omit it and any tag on that image fires the channel.
 >
 > Terraform builds the `IMAGE_CONTAINER_MAP` env var from these entries,
 > prefixing the registry so keys match the `repository_name` field in trigger
-> events (`crp.../urlshortener`), and appending `:tag` where a channel pins one.
+> events (`crp.../myapp`), and appending `:tag` where a channel pins one.
 
 ### 2. Apply
 
@@ -134,7 +136,7 @@ the Serverless Containers API, so the promoting workflow needs registry
 credentials only:
 
 ```bash
-IMAGE=cr.yandex/<registry-id>/overseas-bot
+IMAGE=cr.yandex/<registry-id>/otherapp
 docker buildx imagetools create --tag "$IMAGE:prod" "$IMAGE:pr-42"
 ```
 

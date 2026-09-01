@@ -19,8 +19,10 @@ resource "yandex_function_trigger" "registry_push" {
     # Fire when a tag is pushed. This covers both flows that matter: a fresh
     # `docker push` of a newly built image, and moving an existing tag onto an
     # image already in the registry (how a build is promoted to another
-    # channel). Verified against the running urlshortener deployment, where a
-    # plain push of a new image produced a revision one second later.
+    # channel). Verified against a live deployment of this stack, where a plain
+    # push of a newly built image produced a container revision one second
+    # later — so a fresh push does raise create-image-tag, not only
+    # create-image.
     create_image_tag = true
   }
 

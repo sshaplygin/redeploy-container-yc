@@ -23,7 +23,7 @@ resource "yandex_function" "deploy" {
     # updating terraform.tfvars and re-applying.
     #
     # Keys carry the registry_id prefix to match the repository_name field in
-    # Container Registry trigger events (e.g. "crp.../urlshortener"), and carry
+    # Container Registry trigger events (e.g. "crp.../myapp"), and carry
     # the tag when the channel pins one, which is how two channels cut from the
     # same image reach different containers. Terraform fails on a duplicate
     # key, so two channels cannot silently claim the same image and tag.
