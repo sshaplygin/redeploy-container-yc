@@ -65,3 +65,18 @@ resource "yandex_lockbox_secret_iam_member" "function_payload_viewer" {
   role      = "lockbox.payloadViewer"
   member    = "serviceAccount:${yandex_iam_service_account.function_sa.id}"
 }
+
+# Deploying a revision that carries Lockbox secrets needs more than
+# serverless-containers.editor: Yandex Cloud additionally checks
+# functions.editor on the caller. This is the documented behaviour of the
+# platform, not a guess — the README of yc-actions/yc-sls-container-deploy
+# says of secrets that "serverless-containers.editor [is] missing some
+# permissions, so you have to use this one additionally". Established here
+# empirically as well: with the secrets block stripped from the revision the
+# function deploys fine on editor alone, and with secrets present the deploy
+# is 403 regardless of any lockbox.* grant on the secret or the folder.
+resource "yandex_resourcemanager_folder_iam_member" "function_functions_editor" {
+  folder_id = var.folder_id
+  role      = "functions.editor"
+  member    = "serviceAccount:${yandex_iam_service_account.function_sa.id}"
+}
