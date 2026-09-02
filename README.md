@@ -85,12 +85,14 @@ image_container_map = {
     registry_id  = "crp..."
     tag          = "test"
     container_id = "bbb..."
+    secret_ids   = ["e6q..."]
   }
   otherapp-prod = {
     image        = "otherapp"
     registry_id  = "crp..."
     tag          = "prod"
     container_id = "bbc..."
+    secret_ids   = ["e6q..."]
   }
 }
 ```
@@ -100,6 +102,18 @@ image_container_map = {
 > `registry_id` is per entry and defaults to the top-level `registry_id`, so one
 > stack can serve several registries. `tag` narrows both the trigger and the
 > routing; omit it and any tag on that image fires the channel.
+>
+> `secret_ids` lists the Lockbox secrets that container's revision mounts. A
+> container with secrets **cannot be redeployed without it**: the function
+> copies the revision's `secrets` block verbatim, and Yandex Cloud refuses to
+> attach a secret the caller cannot read, so `DeployRevision` answers
+> `403 Permission denied` — after the event has been parsed and the container
+> resolved, which makes the trigger look healthy while nothing deploys. Find
+> them with:
+>
+> ```bash
+> yc serverless container revision get <revision-id> --format json | jq '.secrets'
+> ```
 >
 > Terraform builds the `IMAGE_CONTAINER_MAP` env var from these entries,
 > prefixing the registry so keys match the `repository_name` field in trigger
@@ -175,6 +189,7 @@ The service account used to run `terraform apply` (e.g. `registry-deploy-sa`) ne
 | `iam.serviceAccounts.user` | `<function_name>-sa` | Assign the container's service account when deploying a revision |
 | `vpc.user` | `<function_name>-sa` | Attach a VPC network when the revision config carries connectivity settings |
 | `serverless.functions.invoker` | `<function_name>-trigger-sa` | Invoke the Cloud Function from the registry trigger |
+| `lockbox.payloadViewer` | `<function_name>-sa`, per secret in `secret_ids` | Attach the revision's Lockbox secrets to the new revision |
 
 ## Local development
 

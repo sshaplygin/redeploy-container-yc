@@ -8,6 +8,8 @@ registry_id = "crp..."   # yc container registry list — the default registry
 #   container_id = yc serverless container list
 #   registry_id  = optional, defaults to the registry_id above
 #   tag          = optional, only this tag fires the trigger and routes here
+#   secret_ids   = optional, Lockbox secrets the container's revision mounts;
+#                  required for such a container, or DeployRevision returns 403
 image_container_map = {
   myapp = {
     image        = "myapp"
@@ -23,12 +25,14 @@ image_container_map = {
   #   registry_id  = "crp..."
   #   tag          = "test"
   #   container_id = "bbb..."
+  #   secret_ids   = ["e6q..."]
   # }
   # otherapp-prod = {
   #   image        = "otherapp"
   #   registry_id  = "crp..."
   #   tag          = "prod"
   #   container_id = "bbc..."
+  #   secret_ids   = ["e6q..."]
   # }
 }
 
