@@ -34,6 +34,11 @@ locals {
       registry_id = coalesce(v.registry_id, var.registry_id)
     })
   }
+
+  # Every Lockbox secret any channel's container mounts, deduplicated: two
+  # channels on one image reference the same secrets, and a role is granted to
+  # the function once per secret, not once per channel.
+  function_secret_ids = toset(flatten([for v in local.channels : v.secret_ids]))
 }
 
 # Zip the Go source so Terraform can upload it as function content.

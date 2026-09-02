@@ -47,3 +47,21 @@ resource "yandex_resourcemanager_folder_iam_member" "trigger_function_invoker" {
   role      = "serverless.functions.invoker"
   member    = "serviceAccount:${yandex_iam_service_account.trigger_sa.id}"
 }
+
+# ── Lockbox access for the secrets the target containers mount ───────────────
+# The function copies the current revision's `secrets` block verbatim into the
+# revision it deploys, and Yandex Cloud will not let a caller attach a secret it
+# cannot itself read: DeployRevision answers 403 Permission denied, after the
+# event has been parsed and the container resolved, so the trigger looks healthy
+# and only the function's log shows the failure.
+#
+# The role is granted per secret named in a channel's secret_ids rather than on
+# the folder, so the function can read exactly the secrets belonging to the
+# containers it deploys and nothing else.
+resource "yandex_lockbox_secret_iam_member" "function_payload_viewer" {
+  for_each = local.function_secret_ids
+
+  secret_id = each.value
+  role      = "lockbox.payloadViewer"
+  member    = "serviceAccount:${yandex_iam_service_account.function_sa.id}"
+}

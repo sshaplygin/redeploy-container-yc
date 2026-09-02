@@ -29,6 +29,7 @@ variable "image_container_map" {
     container_id = string
     registry_id  = optional(string)
     tag          = optional(string)
+    secret_ids   = optional(list(string), [])
   }))
   description = <<-EOT
     Deploy channels, keyed by an arbitrary label that names the channel.
@@ -42,6 +43,10 @@ variable "image_container_map" {
                    which is what lets one stack serve several registries.
       tag          Only this tag fires the trigger, and only this tag routes
                    to this container. Omitted means any tag.
+      secret_ids   Lockbox secrets the container's revision mounts. The
+                   function is granted lockbox.payloadViewer on each, without
+                   which DeployRevision refuses the revision with 403. Leave
+                   empty for a container that mounts no secrets.
 
     Example:
       {
@@ -54,6 +59,7 @@ variable "image_container_map" {
           registry_id  = "crp..."
           tag          = "test"
           container_id = "bbb..."
+          secret_ids   = ["e6q..."]
         }
       }
   EOT
